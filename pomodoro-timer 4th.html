@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pomodoro Timer</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0c0c10;
+  --surface: #13131a;
+  --surface2: #1a1a24;
+  --border: rgba(255,255,255,0.07);
+  --work: #c084fc;
+  --break: #4ade80;
+  --text: #e8e6f0;
+  --muted: #55556a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 36px 16px 60px;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed;
+  top: -100px; left: 50%;
+  transform: translateX(-50%);
+  width: 560px; height: 380px;
+  background: radial-gradient(ellipse, rgba(120,50,230,0.16) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
+  transition: background 0.9s;
+}
+body.brk-phase::before {
+  background: radial-gradient(ellipse, rgba(30,160,80,0.14) 0%, transparent 70%);
+}
+.app { position: relative; z-index: 1; width: 100%; max-width: 430px; }
+
+.header { text-align: center; margin-bottom: 28px; }
+.header h1 {
+  font-family: 'DM Serif Display', serif;
+  font-size: 26px; font-weight: 400; letter-spacing: -0.3px;
+  color: var(--text); margin-bottom: 4px;
+}
+.header p { font-size: 11px; color: var(--muted); letter-spacing: 2px; text-transform: uppercase; }
+
+.phase-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 16px; border-radius: 99px;
+  font-size: 11px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase;
+  margin-bottom: 20px;
+  border: 1px solid rgba(192,132,252,0.28);
+  background: rgba(192,132,252,0.08); color: var(--work);
+  transition: all 0.5s;
+}
+.phase-pill.brk {
+  border-color: rgba(74,222,128,0.28);
+  background: rgba(74,222,128,0.08); color: var(--break);
+}
+.pip { width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+  box-shadow: 0 0 5px currentColor; }
+
+.ring-wrap { display: flex; justify-content: center; margin-bottom: 14px; }
+.ring-svg { display: block; transition: filter 0.7s; filter: drop-shadow(0 0 22px rgba(130,60,240,0.28)); }
+body.brk-phase .ring-svg { filter: drop-shadow(0 0 22px rgba(74,222,128,0.22)); }
+
+/* Active target display (shown while running) */
+.active-target-bar {
+  background: var(--surface);
+  border: 1px solid rgba(192,132,252,0.22);
+  border-radius: 14px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  max-height: 0; overflow: hidden; opacity: 0;
+  transition: max-height 0.4s cubic-bezier(0.4,0,0.2,1), opacity 0.35s, margin 0.3s;
+}
+.active-target-bar.on { max-height: 60px; opacity: 1; margin-bottom: 14px; }
+.atb-left { display: flex; align-items: center; gap: 10px; }
+.atb-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 600; flex-shrink: 0;
+}
+.atb-name { font-size: 13px; color: #ccc; font-weight: 500; }
+.atb-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.atb-progress {
+  font-family: 'DM Mono', monospace;
+  font-size: 13px; color: var(--work); white-space: nowrap;
+}
+
+.dots { display: flex; gap: 8px; justify-content: center; margin-bottom: 24px; }
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--surface2); border: 1px solid rgba(255,255,255,0.08);
+  transition: all 0.4s;
+}
+.dot.done { background: var(--work); border-color: var(--work); box-shadow: 0 0 5px rgba(192,132,252,0.5); }
+.dot.current { background: transparent; border-color: var(--work); box-shadow: 0 0 6px rgba(192,132,252,0.6); }
+
+.controls { display: flex; gap: 10px; justify-content: center; margin-bottom: 26px; }
+.btn {
+  font-family: 'DM Sans', sans-serif; cursor: pointer;
+  border-radius: 99px; font-size: 13px; font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface2); color: var(--muted);
+  padding: 10px 22px; transition: all 0.18s;
+}
+.btn:hover { border-color: rgba(255,255,255,0.13); color: var(--text); }
+.btn:active { transform: scale(0.96); }
+.btn-main {
+  padding: 12px 38px; font-size: 14px;
+  background: rgba(192,132,252,0.1);
+  border-color: rgba(192,132,252,0.35); color: var(--work);
+}
+.btn-main:hover { background: rgba(192,132,252,0.18); color: var(--work); }
+.btn-main.brk { background: rgba(74,222,128,0.09); border-color: rgba(74,222,128,0.35); color: var(--break); }
+.btn-main.brk:hover { background: rgba(74,222,128,0.16); }
+
+/* Settings panel */
+.settings-panel {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 20px; overflow: hidden;
+  max-height: 900px; opacity: 1; margin-bottom: 14px;
+  transition: max-height 0.55s cubic-bezier(0.4,0,0.2,1), opacity 0.38s, margin 0.4s;
+}
+.settings-panel.gone { max-height: 0; opacity: 0; margin-bottom: 0; }
+.s-inner { padding: 20px 20px 18px; }
+.s-title { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+
+.s-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.s-row:last-of-type { border-bottom: none; }
+.s-lbl { font-size: 13px; color: #aaa; }
+.s-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+.stepper {
+  display: flex; align-items: center;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+}
+.step-btn {
+  background: transparent; border: none; color: var(--muted);
+  width: 34px; height: 34px; cursor: pointer; font-size: 19px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.14s, color 0.14s; font-family: 'DM Mono', monospace;
+}
+.step-btn:hover { background: rgba(255,255,255,0.06); color: var(--text); }
+.step-val {
+  font-family: 'DM Mono', monospace; font-size: 14px;
+  color: var(--text); min-width: 36px; text-align: center;
+}
+
+.divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+
+/* Targets section */
+.g-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.g-title { font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+.g-add {
+  background: rgba(192,132,252,0.1); border: 1px solid rgba(192,132,252,0.26);
+  color: var(--work); padding: 5px 14px; border-radius: 99px;
+  font-size: 11px; font-family: 'DM Sans', sans-serif; cursor: pointer;
+  transition: background 0.15s;
+}
+.g-add:hover { background: rgba(192,132,252,0.2); }
+
+.g-input-wrap { display: none; margin-bottom: 10px; }
+.g-input-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.g-input {
+  flex: 1; background: var(--surface2);
+  border: 1px solid rgba(192,132,252,0.3); border-radius: 10px;
+  padding: 9px 14px; font-size: 13px; color: var(--text);
+  font-family: 'DM Sans', sans-serif; outline: none;
+}
+.g-input:focus { border-color: rgba(192,132,252,0.55); }
+.g-input::placeholder { color: var(--muted); }
+.g-sess-wrap {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted);
+}
+.g-sess-input {
+  background: var(--surface2);
+  border: 1px solid rgba(192,132,252,0.3); border-radius: 8px;
+  padding: 9px 8px; font-size: 13px; color: var(--text);
+  font-family: 'DM Mono', monospace; outline: none;
+  width: 52px; text-align: center;
+}
+.g-sess-input:focus { border-color: rgba(192,132,252,0.55); }
+.g-confirm {
+  background: rgba(192,132,252,0.12); border: 1px solid rgba(192,132,252,0.3);
+  color: var(--work); padding: 9px 14px; border-radius: 10px;
+  font-size: 13px; font-family: 'DM Sans', sans-serif; cursor: pointer;
+  white-space: nowrap; transition: background 0.15s;
+}
+.g-confirm:hover { background: rgba(192,132,252,0.22); }
+
+.g-list { display: flex; flex-direction: column; gap: 7px; }
+.g-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0; }
+
+.g-item {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 8px 12px; cursor: pointer;
+  transition: border-color 0.2s;
+}
+.g-item:hover { border-color: rgba(255,255,255,0.11); }
+.g-item.active { border-color: rgba(192,132,252,0.42); }
+.g-item.done-item { opacity: 0.5; }
+
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 500; flex-shrink: 0;
+}
+.g-name { flex: 1; font-size: 13px; color: #ccc; }
+.g-progress-col { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.g-badge {
+  font-size: 11px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 99px; padding: 2px 10px; color: var(--muted);
+}
+.g-badge.complete {
+  border-color: rgba(74,222,128,0.3); color: var(--break);
+  background: rgba(74,222,128,0.08);
+}
+.g-mini-bar {
+  width: 60px; height: 3px; border-radius: 99px;
+  background: var(--surface); overflow: hidden;
+}
+.g-mini-fill {
+  height: 100%; border-radius: 99px;
+  background: var(--work); transition: width 0.4s;
+}
+
+/* Edit target sessions inline */
+.g-edit-sess {
+  display: flex; align-items: center; gap: 4px;
+}
+.g-edit-sess-input {
+  background: var(--surface); border: 1px solid rgba(192,132,252,0.3);
+  border-radius: 6px; padding: 3px 6px;
+  font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text);
+  width: 44px; text-align: center; outline: none;
+}
+.g-edit-sess-input:focus { border-color: rgba(192,132,252,0.6); }
+.g-edit-ok {
+  background: none; border: none; color: var(--work); cursor: pointer;
+  font-size: 14px; padding: 0 2px;
+}
+
+.g-del {
+  background: transparent; border: none; color: var(--muted);
+  cursor: pointer; font-size: 17px; line-height: 1;
+  width: 22px; text-align: center; border-radius: 4px; transition: color 0.14s;
+}
+.g-del:hover { color: #e24b4a; }
+
+/* Peek bar */
+.peek-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 10px 18px; cursor: pointer;
+  max-height: 0; overflow: hidden; opacity: 0; margin-bottom: 0;
+  transition: max-height 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.35s, margin 0.4s;
+}
+.peek-bar.on { max-height: 56px; opacity: 1; margin-bottom: 14px; }
+.peek-bar:hover { border-color: rgba(255,255,255,0.11); }
+.peek-info { font-size: 12px; color: var(--muted); }
+.peek-info b { color: #aaa; font-weight: 500; }
+.peek-chevron { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 28px; left: 50%;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--surface); border: 1px solid rgba(192,132,252,0.28);
+  color: var(--work); padding: 9px 22px; border-radius: 99px;
+  font-size: 12px; opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none; z-index: 99; white-space: nowrap;
+}
+.toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Alarm overlay */
+.alarm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+}
+.alarm-overlay.on { opacity: 1; pointer-events: all; }
+.alarm-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 36px 32px;
+  text-align: center;
+  max-width: 320px; width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.alarm-icon { font-size: 48px; margin-bottom: 14px; }
+.alarm-title {
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px; font-weight: 400;
+  color: var(--text); margin-bottom: 8px;
+}
+.alarm-sub { font-size: 13px; color: var(--muted); margin-bottom: 24px; line-height: 1.5; }
+.alarm-btn {
+  display: inline-block; padding: 12px 36px;
+  border-radius: 99px; font-size: 14px; font-weight: 500;
+  cursor: pointer; border: none; font-family: 'DM Sans', sans-serif;
+  transition: opacity 0.18s;
+}
+.alarm-btn:hover { opacity: 0.85; }
+.alarm-btn.work-btn { background: rgba(192,132,252,0.2); border: 1px solid rgba(192,132,252,0.4); color: var(--work); }
+.alarm-btn.brk-btn { background: rgba(74,222,128,0.15); border: 1px solid rgba(74,222,128,0.4); color: var(--break); }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <h1>Pomodoro</h1>
+    <p>Deep work timer</p>
+  </div>
+
+  <div style="text-align:center">
+    <div class="phase-pill" id="pill">
+      <span class="pip"></span>
+      <span id="pillTxt">Work Session</span>
+    </div>
+  </div>
+
+  <div class="ring-wrap">
+    <svg class="ring-svg" id="svg" width="240" height="240" viewBox="0 0 240 240">
+      <circle cx="120" cy="120" r="102" fill="none" stroke="#1c1c28" stroke-width="10"/>
+      <circle id="ring" cx="120" cy="120" r="102"
+        fill="none" stroke="#c084fc" stroke-width="10" stroke-linecap="round"
+        stroke-dasharray="640.88" stroke-dashoffset="0"
+        transform="rotate(-90 120 120)"
+        style="transition:stroke-dashoffset 1s linear,stroke 0.5s"/>
+      <text id="tTime"
+        x="120" y="110" text-anchor="middle" dominant-baseline="middle"
+        font-family="DM Mono,monospace" font-weight="300" font-size="55"
+        fill="#e8e6f0" letter-spacing="-2"></text>
+      <text id="tPhase"
+        x="120" y="150" text-anchor="middle"
+        font-family="DM Sans,sans-serif" font-size="11" fill="#55556a" letter-spacing="2">FOCUS</text>
+      <text id="tSess"
+        x="120" y="167" text-anchor="middle"
+        font-family="DM Sans,sans-serif" font-size="11" fill="#55556a"></text>
+    </svg>
+  </div>
+
+  <!-- Active target bar (visible while timer running) -->
+  <div class="active-target-bar" id="atb">
+    <div class="atb-left">
+      <div class="atb-icon" id="atbIcon"></div>
+      <div>
+        <div class="atb-name" id="atbName"></div>
+        <div class="atb-sub" id="atbSub"></div>
+      </div>
+    </div>
+    <div class="atb-progress" id="atbProgress"></div>
+  </div>
+
+  <div class="dots" id="dots"></div>
+
+  <div class="controls">
+    <button class="btn" id="resetBtn">Reset</button>
+    <button class="btn btn-main" id="startBtn">Start</button>
+    <button class="btn" id="skipBtn">Skip</button>
+  </div>
+
+  <!-- peek bar: visible when settings hidden -->
+  <div class="peek-bar" id="peek" onclick="openSettings()">
+    <div class="peek-info" id="peekInfo"></div>
+    <div class="peek-chevron">▲ settings</div>
+  </div>
+
+  <!-- settings panel -->
+  <div class="settings-panel" id="panel">
+    <div class="s-inner">
+
+      <div class="s-title">Timer Settings</div>
+
+      <div class="s-row">
+        <div><div class="s-lbl">Work time</div><div class="s-sub">minutes per session</div></div>
+        <div class="stepper">
+          <button class="step-btn" onclick="adj('work',-1)">−</button>
+          <span class="step-val" id="vWork">50</span>
+          <button class="step-btn" onclick="adj('work', 1)">+</button>
+        </div>
+      </div>
+
+      <div class="s-row">
+        <div><div class="s-lbl">Break time</div><div class="s-sub">minutes per break</div></div>
+        <div class="stepper">
+          <button class="step-btn" onclick="adj('brk',-1)">−</button>
+          <span class="step-val" id="vBrk">10</span>
+          <button class="step-btn" onclick="adj('brk', 1)">+</button>
+        </div>
+      </div>
+
+      <div class="s-row">
+        <div><div class="s-lbl">Sessions</div><div class="s-sub">before long break</div></div>
+        <div class="stepper">
+          <button class="step-btn" onclick="adj('sess',-1)">−</button>
+          <span class="step-val" id="vSess">4</span>
+          <button class="step-btn" onclick="adj('sess', 1)">+</button>
+        </div>
+      </div>
+
+      <div class="s-row">
+        <div><div class="s-lbl">Long break</div><div class="s-sub">after all sessions</div></div>
+        <div class="stepper">
+          <button class="step-btn" onclick="adj('long',-1)">−</button>
+          <span class="step-val" id="vLong">30</span>
+          <button class="step-btn" onclick="adj('long', 1)">+</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Targets section -->
+      <div class="g-header">
+        <div class="g-title">Targets</div>
+        <button class="g-add" onclick="toggleGInput()">+ Add target</button>
+      </div>
+      <div class="g-input-wrap" id="gWrap">
+        <div class="g-input-row">
+          <input class="g-input" id="gIn" placeholder="Target name…" maxlength="40"
+            onkeydown="gKey(event)">
+          <input class="g-sess-input" id="gSessIn" type="number" min="1" max="20" value="2"
+            title="Sessions needed" onkeydown="gKey(event)">
+          <button class="g-confirm" onclick="addTarget()">Add</button>
+        </div>
+        <div style="font-size:11px;color:var(--muted);padding:0 2px">Number = sessions to complete this target</div>
+      </div>
+      <div class="g-list" id="gList"><div class="g-empty">No targets yet</div></div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- Alarm overlay -->
+<div class="alarm-overlay" id="alarmOverlay">
+  <div class="alarm-box">
+    <div class="alarm-icon" id="alarmIcon">⏰</div>
+    <div class="alarm-title" id="alarmTitle">Time's up!</div>
+    <div class="alarm-sub" id="alarmSub"></div>
+    <button class="alarm-btn" id="alarmBtn" onclick="dismissAlarm()">Got it</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CIRC = 640.88;
+const $ = id => document.getElementById(id);
+
+let cfg = { work:50, brk:10, sess:4, long:30 };
+let st = {
+  running:false, phase:'work', session:1,
+  timeLeft: 50*60, totalTime: 50*60, iv: null
+};
+let targets = [], activeT = -1, panelOpen = true;
+
+const pad = n => String(n).padStart(2,'0');
+const fmt = s => pad(Math.floor(s/60)) + ':' + pad(s%60);
+
+const COLORS = [
+  ['rgba(139,92,246,.14)','#a78bfa'],
+  ['rgba(34,197,94,.12)','#4ade80'],
+  ['rgba(56,189,248,.12)','#38bdf8'],
+  ['rgba(251,146,60,.12)','#fb923c'],
+  ['rgba(244,114,182,.12)','#f472b6'],
+  ['rgba(250,204,21,.12)','#fbbf24'],
+];
+
+// ── Audio alarm ──────────────────────────────────────────────────────────────
+let audioCtx = null;
+function getAudioCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+function playAlarmSound(isWork){
+  try {
+    const ctx = getAudioCtx();
+    // Three-note chime sequence
+    const notes = isWork
+      ? [523, 659, 784]   // C E G  – bright "go back to work"
+      : [784, 659, 523];  // G E C  – descending "take a break"
+
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const start = ctx.currentTime + i * 0.28;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.4, start + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.5);
+      osc.start(start); osc.stop(start + 0.5);
+    });
+  } catch(e) { /* audio blocked */ }
+}
+
+// ── Alarm overlay ────────────────────────────────────────────────────────────
+let alarmPendingPhase = null; // what phase to transition TO after dismiss
+
+function showAlarm(endedPhase){
+  // endedPhase: 'work' = work just ended → take a break
+  //             'break' = break just ended → start focus
+  alarmPendingPhase = endedPhase;
+  playAlarmSound(endedPhase === 'break'); // rising = go to work, falling = go to break
+
+  if(endedPhase === 'work'){
+    $('alarmIcon').textContent = '☕';
+    $('alarmTitle').textContent = 'Focus session done!';
+    const isLong = st.session >= cfg.sess;
+    $('alarmSub').textContent = isLong
+      ? `All ${cfg.sess} sessions complete — enjoy your long break!`
+      : `Session ${st.session} of ${cfg.sess} done. Time to recharge.`;
+    $('alarmBtn').textContent = 'Start Break';
+    $('alarmBtn').className = 'alarm-btn brk-btn';
+  } else {
+    $('alarmIcon').textContent = '🎯';
+    $('alarmTitle').textContent = 'Break over!';
+    $('alarmSub').textContent = 'Ready to focus again? Hit the button to start your next session.';
+    $('alarmBtn').textContent = 'Start Focus';
+    $('alarmBtn').className = 'alarm-btn work-btn';
+  }
+
+  $('alarmOverlay').classList.add('on');
+}
+
+function dismissAlarm(){
+  $('alarmOverlay').classList.remove('on');
+  // Now actually transition the phase
+  doPhaseTransition(alarmPendingPhase);
+  alarmPendingPhase = null;
+  // Auto-start the next phase
+  startTimer();
+}
+
+// ── Timer logic ──────────────────────────────────────────────────────────────
+function refresh(){
+  const pct = st.timeLeft / st.totalTime;
+  $('ring').style.strokeDashoffset = CIRC * (1 - pct);
+  $('tTime').textContent = fmt(st.timeLeft);
+  const isW = st.phase === 'work';
+  $('ring').style.stroke = isW ? '#c084fc' : '#4ade80';
+  $('pill').className = 'phase-pill' + (isW ? '' : ' brk');
+  $('pillTxt').textContent = isW ? 'Work Session' : (st.session > cfg.sess ? 'Long Break' : 'Short Break');
+  $('tPhase').textContent = isW ? 'FOCUS' : 'REST';
+  $('tSess').textContent = isW ? `${Math.min(st.session,cfg.sess)} / ${cfg.sess}` : '';
+  document.body.className = isW ? '' : 'brk-phase';
+  $('startBtn').className = 'btn btn-main' + (isW ? '' : ' brk');
+  // dots
+  const d = $('dots'); d.innerHTML = '';
+  for(let i=1; i<=cfg.sess; i++){
+    const dot = document.createElement('div');
+    dot.className = i < st.session ? 'dot done' : i === st.session ? 'dot current' : 'dot';
+    d.appendChild(dot);
+  }
+  refreshATB();
+}
+
+function tick(){
+  if(st.timeLeft <= 0){
+    clearInterval(st.iv); st.running = false;
+    phaseEnd(); return;
+  }
+  st.timeLeft--; refresh();
+}
+
+function phaseEnd(){
+  if(st.phase === 'work'){
+    // Credit active target
+    if(activeT >= 0){
+      targets[activeT].sessions++;
+      checkTargetComplete(activeT);
+      renderTargets();
+    }
+    // Prepare break state but don't transition yet — show alarm first
+    showAlarm('work');
+  } else {
+    showAlarm('break');
+  }
+  $('startBtn').textContent = 'Start';
+  refresh();
+}
+
+function doPhaseTransition(endedPhase){
+  if(endedPhase === 'work'){
+    const isLong = st.session >= cfg.sess;
+    st.phase = 'break';
+    st.timeLeft = st.totalTime = (isLong ? cfg.long : cfg.brk) * 60;
+    if(isLong){
+      // After long break, session resets
+    }
+  } else {
+    st.session++;
+    if(st.session > cfg.sess){ st.session = 1; }
+    st.phase = 'work';
+    st.timeLeft = st.totalTime = cfg.work * 60;
+  }
+  openSettings();
+  refresh();
+}
+
+function startTimer(){
+  if(st.running) return;
+  st.iv = setInterval(tick, 1000); st.running = true;
+  $('startBtn').textContent = 'Pause';
+  closeSettings();
+}
+
+$('startBtn').addEventListener('click', () => {
+  if(st.running){
+    clearInterval(st.iv); st.running = false;
+    $('startBtn').textContent = 'Resume';
+    openSettings();
+  } else {
+    startTimer();
+  }
+});
+
+$('resetBtn').addEventListener('click', () => {
+  clearInterval(st.iv); st.running = false;
+  st.phase='work'; st.session=1;
+  st.timeLeft = st.totalTime = cfg.work*60;
+  $('startBtn').textContent = 'Start';
+  $('alarmOverlay').classList.remove('on');
+  refresh(); openSettings();
+});
+
+$('skipBtn').addEventListener('click', () => {
+  clearInterval(st.iv); st.running = false;
+  st.timeLeft = 0; phaseEnd();
+});
+
+function adj(k, d){
+  const lims = {work:[1,120],brk:[1,60],sess:[1,12],long:[5,90]};
+  const [mn,mx] = lims[k];
+  cfg[k] = Math.min(mx, Math.max(mn, cfg[k]+d));
+  const ids = {work:'vWork',brk:'vBrk',sess:'vSess',long:'vLong'};
+  $(ids[k]).textContent = cfg[k];
+  if(!st.running){
+    st.phase='work'; st.session=1;
+    st.timeLeft = st.totalTime = cfg.work*60;
+    refresh();
+  }
+  updatePeek();
+}
+
+function closeSettings(){
+  $('panel').classList.add('gone');
+  $('peek').classList.add('on');
+  panelOpen = false; updatePeek();
+}
+function openSettings(){
+  $('panel').classList.remove('gone');
+  $('peek').classList.remove('on');
+  panelOpen = true;
+}
+function updatePeek(){
+  $('peekInfo').innerHTML =
+    `<b>${cfg.work}m</b> work &nbsp;·&nbsp; <b>${cfg.brk}m</b> break &nbsp;·&nbsp; <b>${cfg.sess}</b> sessions`;
+}
+
+// ── Active target bar ────────────────────────────────────────────────────────
+function refreshATB(){
+  const bar = $('atb');
+  if(!st.running || activeT < 0){
+    bar.classList.remove('on'); return;
+  }
+  bar.classList.add('on');
+  const t = targets[activeT];
+  const [bg,fg] = COLORS[t.ci];
+  const ini = t.name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  $('atbIcon').style.background = bg;
+  $('atbIcon').style.color = fg;
+  $('atbIcon').textContent = ini;
+  $('atbName').textContent = t.name;
+  const done = t.sessions;
+  const need = t.targetSessions;
+  $('atbSub').textContent = t.complete ? 'Target complete ✓' : `Target: ${need} session${need!==1?'s':''}`;
+  $('atbProgress').textContent = `${done} / ${need}`;
+  $('atbProgress').style.color = t.complete ? 'var(--break)' : 'var(--work)';
+}
+
+// ── Targets ──────────────────────────────────────────────────────────────────
+function checkTargetComplete(i){
+  const t = targets[i];
+  if(!t.complete && t.sessions >= t.targetSessions){
+    t.complete = true;
+    toast(`🎉 Target "${t.name}" complete!`);
+  }
+}
+
+function toggleGInput(){
+  const w = $('gWrap');
+  w.style.display = w.style.display === 'block' ? 'none' : 'block';
+  if(w.style.display === 'block') $('gIn').focus();
+}
+function gKey(e){
+  if(e.key === 'Enter') addTarget();
+  if(e.key === 'Escape') { $('gWrap').style.display='none'; }
+}
+function addTarget(){
+  const name = $('gIn').value.trim(); if(!name) return;
+  const sessNeeded = Math.max(1, parseInt($('gSessIn').value) || 2);
+  targets.push({ name, sessions:0, targetSessions: sessNeeded, complete:false, ci: targets.length % COLORS.length });
+  $('gIn').value=''; $('gSessIn').value=2; $('gWrap').style.display='none';
+  renderTargets();
+}
+
+function renderTargets(){
+  const list = $('gList');
+  if(!targets.length){ list.innerHTML='<div class="g-empty">No targets yet</div>'; return; }
+  list.innerHTML='';
+  targets.forEach((t,i)=>{
+    const [bg,fg] = COLORS[t.ci];
+    const ini = t.name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+    const pct = Math.min(1, t.sessions / t.targetSessions) * 100;
+    const row = document.createElement('div');
+    row.className = 'g-item' + (i===activeT ? ' active' : '') + (t.complete ? ' done-item' : '');
+    row.innerHTML = `
+      <div class="avatar" style="background:${bg};color:${fg}">${ini}</div>
+      <div style="flex:1;min-width:0">
+        <div class="g-name" style="${t.complete?'text-decoration:line-through':''}">${t.name}</div>
+      </div>
+      <div class="g-progress-col">
+        <span class="g-badge ${t.complete?'complete':''}">${t.complete ? '✓ done' : `${t.sessions}/${t.targetSessions} sess`}</span>
+        <div class="g-mini-bar"><div class="g-mini-fill" style="width:${pct}%;background:${t.complete?'var(--break)':'var(--work)'}"></div></div>
+      </div>
+      <div class="g-edit-sess" title="Edit sessions needed" onclick="event.stopPropagation()">
+        <input class="g-edit-sess-input" type="number" min="1" max="20"
+          value="${t.targetSessions}"
+          onchange="updateTargetSess(${i}, this.value)"
+          title="Sessions needed for this target">
+      </div>
+      <button class="g-del" onclick="delT(event,${i})">×</button>`;
+    row.addEventListener('click', e => {
+      if(e.target.classList.contains('g-del')) return;
+      if(e.target.closest('.g-edit-sess')) return;
+      activeT = activeT===i ? -1 : i;
+      renderTargets();
+      refreshATB();
+      toast(activeT>=0 ? `Tracking: ${targets[activeT].name}` : 'Target tracking off');
+    });
+    list.appendChild(row);
+  });
+}
+
+function updateTargetSess(i, val){
+  const n = Math.max(1, Math.min(20, parseInt(val) || 1));
+  targets[i].targetSessions = n;
+  // Re-check completion
+  if(!targets[i].complete && targets[i].sessions >= n){
+    targets[i].complete = true;
+    toast(`🎉 Target "${targets[i].name}" complete!`);
+  } else if(targets[i].complete && targets[i].sessions < n){
+    targets[i].complete = false; // un-complete if sessions now needed again
+  }
+  renderTargets();
+  refreshATB();
+}
+
+function delT(e,i){
+  e.stopPropagation();
+  targets.splice(i,1);
+  if(activeT===i) activeT=-1;
+  else if(activeT>i) activeT--;
+  renderTargets();
+  refreshATB();
+}
+
+let tTimer;
+function toast(msg){
+  clearTimeout(tTimer);
+  const t = $('toast'); t.textContent = msg; t.classList.add('on');
+  tTimer = setTimeout(()=>t.classList.remove('on'), 3500);
+}
+
+// Boot
+$('ring').style.strokeDasharray = CIRC;
+refresh(); updatePeek();
+</script>
+</body>
+</html>
